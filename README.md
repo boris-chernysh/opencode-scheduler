@@ -9,8 +9,13 @@ opencode-scheduler/
 ├── bin/
 │   ├── opencode-scheduler-daemon   # демон: цикл sleep → parsecron → supervisor
 │   └── opencode-scheduler-ctl      # управление (start|stop|restart|status|logs)
-└── lib/
-    └── supervisor.pl               # исполнитель: форк, таймаут, lock, статус
+├── lib/
+│   └── supervisor.pl               # исполнитель: форк, таймаут, lock, статус
+├── docs/
+│   └── opencode-skill.md           # opencode skill (для AI-агента)
+├── tests/
+│   └── test_cron.sh                # тесты cron-парсера
+└── .github/workflows/test.yml      # CI
 ```
 
 ### Как работает
@@ -63,10 +68,14 @@ opencode-scheduler/
 git clone https://github.com/boris-chernysh/opencode-scheduler.git
 cd opencode-scheduler
 
-# Симлинки
+# Симлинки для скриптов
 ln -sf "$(pwd)/bin/opencode-scheduler-daemon" ~/.local/bin/
 ln -sf "$(pwd)/bin/opencode-scheduler-ctl" ~/.local/bin/
 ln -sf "$(pwd)/lib/supervisor.pl" ~/.config/opencode/scheduler/
+
+# Симлинк для opencode skill (агент будет знать архитектуру шедулера)
+mkdir -p ~/.opencode/skills/scheduler
+ln -sf "$(pwd)/docs/opencode-skill.md" ~/.opencode/skills/scheduler/SKILL.md
 
 # Создать директории
 mkdir -p ~/.config/opencode/scheduler/scopes
