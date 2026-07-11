@@ -21,9 +21,9 @@ case "${1:-status}" in
         fi
         ;;
     restart)
-        "$0" stop
+        bash "$0" stop
         sleep 1
-        "$0" start
+        bash "$0" start
         ;;
     status)
         if tmux has-session -t "$SESSION" 2>/dev/null; then
