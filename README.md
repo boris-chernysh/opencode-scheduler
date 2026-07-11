@@ -68,12 +68,12 @@ opencode-scheduler/
 git clone https://github.com/boris-chernysh/opencode-scheduler.git
 cd opencode-scheduler
 
-# Симлинки для скриптов
+# Симлинки для скриптов (или cp, если FS не поддерживает симлинки — см. ниже)
 ln -sf "$(pwd)/bin/opencode-scheduler-daemon" ~/.local/bin/
 ln -sf "$(pwd)/bin/opencode-scheduler-ctl" ~/.local/bin/
 ln -sf "$(pwd)/lib/supervisor.pl" ~/.config/opencode/scheduler/
 
-# Симлинк для opencode skill (агент будет знать архитектуру шедулера)
+# opencode skill (агент будет знать архитектуру шедулера)
 mkdir -p ~/.opencode/skills/scheduler
 ln -sf "$(pwd)/docs/opencode-skill.md" ~/.opencode/skills/scheduler/SKILL.md
 
@@ -83,6 +83,14 @@ mkdir -p ~/.config/opencode/logs/scheduler/daemon
 
 # Добавить джобы в массив JOBS внутри daemon (см. ниже)
 ```
+
+> **Если файловая система не поддерживает симлинки** (FUSE, exFAT, noexec):
+> замени `ln -sf` на `cp`. Или создай bash-врапперы:
+> ```bash
+> # ~/.local/bin/opencode-scheduler-ctl
+> #!/bin/bash
+> exec bash /path/to/opencode-scheduler/bin/opencode-scheduler-ctl "$@"
+> ```
 
 ## Добавление джоба
 
