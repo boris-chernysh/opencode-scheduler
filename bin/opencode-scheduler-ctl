@@ -1,0 +1,44 @@
+#!/bin/bash
+# opencode-scheduler-ctl — manage scheduler daemon
+SESSION="opencode-scheduler"
+SCRIPT="$HOME/.local/bin/opencode-scheduler-daemon"
+
+case "${1:-status}" in
+    start)
+        if tmux has-session -t "$SESSION" 2>/dev/null; then
+            echo "Scheduler already running in tmux session '$SESSION'"
+            exit 1
+        fi
+        tmux new-session -d -s "$SESSION" "$SCRIPT"
+        echo "Scheduler started in tmux session '$SESSION'"
+        ;;
+    stop)
+        if tmux has-session -t "$SESSION" 2>/dev/null; then
+            tmux kill-session -t "$SESSION"
+            echo "Scheduler stopped"
+        else
+            echo "Scheduler not running"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    status)
+        if tmux has-session -t "$SESSION" 2>/dev/null; then
+            echo "Scheduler is RUNNING (tmux session: $SESSION)"
+            echo "Logs: $HOME/.config/opencode/logs/scheduler/daemon/opencode-scheduler-daemon.log"
+            echo "Job log: $HOME/.config/opencode/logs/scheduler/personal-51e9e3f41a6c/morning-mail.log"
+        else
+            echo "Scheduler is STOPPED"
+        fi
+        ;;
+    logs)
+        tail -f "$HOME/.config/opencode/logs/scheduler/daemon/opencode-scheduler-daemon.log"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|logs}"
+        exit 1
+        ;;
+esac

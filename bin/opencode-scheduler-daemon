@@ -1,0 +1,134 @@
+#!/bin/bash
+# opencode-scheduler-daemon — multi-job scheduler for PRoot environments
+# Accepts one or more job definitions (file.json [cron]) and runs them.
+# cron format: minute hour day-of-month month day-of-week (5-field)
+
+SCOPE_DIR="$HOME/.config/opencode/scheduler/scopes/personal-51e9e3f41a6c"
+SUPERVISOR="$HOME/.config/opencode/scheduler/supervisor.pl"
+LOG_DIR="$HOME/.config/opencode/logs/scheduler"
+mkdir -p "$LOG_DIR/daemon"
+
+log() {
+    echo "[$(date '+%Y-%m-%dT%H:%M:%S%z')] $*" >> "$LOG_DIR/daemon/opencode-scheduler-daemon.log"
+}
+
+run_job() {
+    local job=$1
+    local slug=$(basename "$job" .json)
+    log "Running job: $slug"
+    perl "$SUPERVISOR" "$job"
+    log "Job $slug finished (exit code: $?)"
+}
+
+cron_next() {
+    local minute=$1 hour=$2
+    local now_epoch=$(date +%s)
+    local now_hour=$(date +%H | sed 's/^0//')
+    local now_min=$(date +%M | sed 's/^0//')
+    local now_total=$((10#$now_hour * 60 + 10#$now_min))
+
+    if [ "$minute" = "*" ]; then minute=0; fi
+
+    local candidates=()
+    local target_h
+    for target_h in $(echo "$hour" | tr ',' ' '); do
+        for target_m in $(echo "$minute" | tr ',' ' '); do
+            local t=$((10#$target_h * 60 + 10#$target_m))
+            # Use -ge so that exact match (scheduled time == now) returns 0
+            if [ $t -ge $now_total ]; then
+                candidates+=($t)
+            fi
+        done
+    done
+
+    if [ ${#candidates[@]} -eq 0 ]; then
+        local first=$(( (10#$(echo "$hour" | cut -d, -f1)) * 60 + (10#$(echo "$minute" | cut -d, -f1)) ))
+        echo $(( (1440 - now_total + first) * 60 ))
+    else
+        local min_t=${candidates[0]}
+        for c in "${candidates[@]}"; do
+            [ $c -lt $min_t ] && min_t=$c
+        done
+        echo $(( (min_t - now_total) * 60 ))
+    fi
+}
+
+cron_next_interval() {
+    local interval_hours=$1
+    local now_epoch=$(date +%s)
+    local now_hour=$(date +%H | sed 's/^0//')
+    echo $(( interval_hours * 3600 - (now_hour % interval_hours) * 3600 - $(date +%M | sed 's/^0//') * 60 - $(date +%S | sed 's/^0//') ))
+}
+
+parsecron() {
+    local cron_expr=$1
+    local minute=$(echo "$cron_expr" | awk '{print $1}')
+    local hour=$(echo "$cron_expr" | awk '{print $2}')
+    local dom=$(echo "$cron_expr" | awk '{print $3}')
+
+    # Expand */N patterns in hour field
+    if [[ "$hour" =~ ^\*/([0-9]+)$ ]]; then
+        local interval=${BASH_REMATCH[1]}
+        cron_next_interval "$interval"
+        return
+    fi
+
+    if [ "$minute" = "*" ] && [ "$dom" = "*" ]; then
+        cron_next "0" "$hour"
+    elif [ "$dom" = "*" ]; then
+        cron_next "$minute" "$hour"
+    else
+        cron_next "$minute" "$hour"
+    fi
+}
+
+JOBS=(
+    "$SCOPE_DIR/jobs/morning-mail.json|30 7 * * *"
+    "$SCOPE_DIR/jobs/task-processor.json|0 */4 * * *"
+    "$SCOPE_DIR/jobs/daily-git-autocommit.json|0 0 * * *"
+    "$SCOPE_DIR/jobs/wiki-ingest-daily.json|0 3 * * *"
+)
+
+log "opencode-scheduler-daemon starting"
+for entry in "${JOBS[@]}"; do
+    jf="${entry%%|*}"
+    jc="${entry##*|}"
+    log "Monitoring job: $jf"
+    log "  Schedule: $jc"
+done
+
+while true; do
+    # Find minimum seconds to next run across all jobs
+    min_sec=999999
+    for entry in "${JOBS[@]}"; do
+        job_cron="${entry##*|}"
+        sec=$(parsecron "$job_cron")
+        [ "$sec" -lt 0 ] && sec=0
+        [ "$sec" -lt "$min_sec" ] && min_sec=$sec
+    done
+
+    # Prevent busy-loop: minimum sleep is 10 seconds
+    [ "$min_sec" -lt 10 ] && min_sec=10
+
+    log "Next run in ${min_sec}s"
+    sleep "$min_sec"
+
+    log "Wakeup — checking schedule"
+    # Phase 1: collect all due jobs (within tolerance) before running any
+    due_jobs=()
+    for entry in "${JOBS[@]}"; do
+        job_file="${entry%%|*}"
+        job_cron="${entry##*|}"
+        sec=$(parsecron "$job_cron")
+        # Job is due if 0 or slightly past due (within 5s tolerance)
+        [ "$sec" -le 5 ] && due_jobs+=("$job_file")
+    done
+
+    # Phase 2: run all collected jobs
+    for job_file in "${due_jobs[@]}"; do
+        slug=$(basename "$job_file" .json)
+        log "Running job: $slug"
+        perl "$SUPERVISOR" "$job_file"
+        log "Job $slug finished (exit code: $?)"
+    done
+done
