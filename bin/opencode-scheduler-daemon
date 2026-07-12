@@ -98,33 +98,30 @@ for entry in "${JOBS[@]}"; do
 done
 
 while true; do
-    # Find minimum seconds to next run across all jobs
+    # Phase 1: compute parsecron for all jobs, find minimum, collect due jobs
     min_sec=999999
-    for entry in "${JOBS[@]}"; do
-        job_cron="${entry##*|}"
-        sec=$(parsecron "$job_cron")
-        [ "$sec" -lt 0 ] && sec=0
-        [ "$sec" -lt "$min_sec" ] && min_sec=$sec
-    done
-
-    # Prevent busy-loop: minimum sleep is 10 seconds
-    [ "$min_sec" -lt 10 ] && min_sec=10
-
-    log "Next run in ${min_sec}s"
-    sleep "$min_sec"
-
-    log "Wakeup — checking schedule"
-    # Phase 1: collect all due jobs (within tolerance) before running any
     due_jobs=()
     for entry in "${JOBS[@]}"; do
         job_file="${entry%%|*}"
         job_cron="${entry##*|}"
         sec=$(parsecron "$job_cron")
-        # Job is due if 0 or slightly past due (within 5s tolerance)
-        [ "$sec" -le 5 ] && due_jobs+=("$job_file")
+        [ "$sec" -lt 0 ] && sec=0
+        if [ "$sec" -lt "$min_sec" ]; then
+            min_sec=$sec
+            due_jobs=("$job_file")
+        elif [ $((sec - min_sec)) -le 5 ]; then
+            due_jobs+=("$job_file")
+        fi
     done
 
-    # Phase 2: run all collected jobs
+    [ "$min_sec" -lt 10 ] && min_sec=10
+
+    log "Next run in ${min_sec}s (${#due_jobs[@]} job(s) due)"
+    sleep "$min_sec"
+
+    # Phase 2: run all jobs that were collected before sleep
+    # (DO NOT re-call parsecron — clock may have drifted past scheduled time)
+    log "Wakeup — running ${#due_jobs[@]} job(s)"
     for job_file in "${due_jobs[@]}"; do
         slug=$(basename "$job_file" .json)
         log "Running job: $slug"
